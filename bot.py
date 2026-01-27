@@ -263,6 +263,13 @@ async def transactions_history(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ---------------- DEPOSIT FLOW ---------------- #
 async def deposit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    kb = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("📋 Copy UID", callback_data=f"copy_uid_{update.effective_user.id}"),
+        InlineKeyboardButton("📋 Copy Number", callback_data="copy_phone_01845810269")
+    ]
+])
     await update.message.reply_text(
     
     "💰 ডিপোজিট প্রক্রিয়া (ধাপে ধাপে)\n\n"
@@ -270,7 +277,7 @@ async def deposit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "মেনু থেকে 💰 ডিপোজিট বাটনে ক্লিক করে আপনার ডিপোজিট অনুরোধ শুরু করুন।\n\n"
         "2️⃣ টাকা পাঠান:\n"
         "বিকাশ অথবা নগদের মাধ্যমে:\n"
-        "📞 নাম্বার: 01845810269\n"
+        "📞 নাম্বার: `01845810269`\n"
         "📌 পেমেন্ট টাইপ: শুধুমাত্র Sent Money\n\n"
         "❌ Cash Out / Payment / ভুল পদ্ধতিতে পাঠানো হলে বাতিল করা হবে\n\n"
         "3️⃣ ডিপোজিট পরিমাণ লিখুন\n"
@@ -1052,10 +1059,16 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ আপনার ভেরিফিকেশন বাতিল করা হয়েছে। অনুগ্রহ করে সঠিক ডকুমেন্ট দিয়ে আবার জমা দিন।"
         )
 
-    # ---------------- COPY UID CALLBACK ---------------- #
+    # ---------------- COPY UID and Number CALLBACK ---------------- #
     elif data.startswith("copy_uid_"):
         uid_copy = data.split("_")[-1]
         await query.answer(text=f"UID: {uid_copy}", show_alert=True)
+
+
+    elif data.startswith("copy_phone_"):
+        phone = data.split("_")[-1]
+        await query.answer(text=f"Number: {phone}", show_alert=True)
+
 
 
 
@@ -1394,7 +1407,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
