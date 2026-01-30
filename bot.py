@@ -46,6 +46,13 @@ cur.execute("""CREATE TABLE IF NOT EXISTS withdraws(
     status TEXT DEFAULT 'pending'
 )""")
 
+# add withdraw_type column if not exists
+try:
+    cur.execute("ALTER TABLE withdraws ADD COLUMN withdraw_type TEXT")
+except:
+    pass
+
+
 # ---------------- EXTRA TABLES (ADDED) ---------------- #
 
 cur.execute("""CREATE TABLE IF NOT EXISTS deposit_dates(
@@ -398,40 +405,85 @@ async def withdraw_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     "1️⃣ Withdraw নির্বাচন করুন\n"
     "মেইন মেনু থেকে 💸 Withdraw বাটনে ক্লিক করে আপনার Withdraw অনুরোধ শুরু করুন।\n\n"
 
-    "2️⃣ Withdraw পরিমাণ লিখুন\n"
-    "আপনি যে পরিমাণ টাকা Withdraw করতে চান তা লিখুন।\n"
-    "⚠️ সর্বনিম্ন Withdraw পরিমাণ: ৳৫০০\n"
-    "⚠️ আপনার প্রাপ্য লাভের বেশি টাকা Withdraw করা যাবে না।\n\n"
+    "2️⃣ Withdraw ধরন নির্বাচন করুন\n"
+    "আপনি Profit অথবা Capital Withdraw করতে পারবেন।\n\n"
 
-    "3️⃣ পেমেন্ট মাধ্যম নির্বাচন করুন\n"
-    "নিচের অপশন থেকে আপনার পছন্দের পেমেন্ট মাধ্যম নির্বাচন করুন:\n"
+    "3️⃣ Withdraw পরিমাণ লিখুন\n"
+    "⚠️ সর্বনিম্ন Withdraw পরিমাণ: ৳৫০০\n\n"
+
+    "4️⃣ পেমেন্ট মাধ্যম নির্বাচন করুন\n"
     "• বিকাশ\n"
     "• নগদ\n\n"
 
-    "4️⃣ পেমেন্ট নাম্বার লিখুন\n"
-    "আপনার নির্বাচিত বিকাশ বা নগদ নাম্বার সঠিকভাবে লিখুন।\n"
-    "⚠️ ভুল নাম্বার দিলে পেমেন্ট ব্যর্থ হতে পারে।\n\n"
-
-    "5️⃣ অনুরোধ জমা দিন\n"
-    "আপনার Withdraw অনুরোধ যাচাইয়ের জন্য জমা দেওয়া হবে।\n\n"
+    "5️⃣ পেমেন্ট নাম্বার লিখুন\n\n"
 
     "6️⃣ এজেন্ট যাচাই\n"
-    "আমাদের এজেন্ট ম্যানুয়ালি আপনার Withdraw অনুরোধ যাচাই করবেন।\n"
-    "অনুমোদনের পর আপনার দেওয়া নাম্বারে পেমেন্ট পাঠানো হবে।\n\n"
-
-    "⚠️ গুরুত্বপূর্ণ নির্দেশনা\n"
-    "• সর্বনিম্ন Withdraw: ৳৫০০\n"
-    "• এজেন্টের অনুমোদনের পরেই Withdraw প্রসেস করা হয়\n"
-    "• প্রসেসিং সময় যাচাই ও কাজের চাপের উপর নির্ভর করে\n"
-    "• ভুয়া বা বারবার অনুরোধ করলে অ্যাকাউন্ট স্থগিত হতে পারে\n\n"
-
-    "অনুগ্রহ করে অনুরোধ জমা দেওয়ার আগে সব তথ্য ভালোভাবে যাচাই করুন।"
+    "এজেন্ট যাচাইয়ের পর পেমেন্ট পাঠানো হবে।"
     )
 
-    context.user_data["state"] = "withdraw_amount"
+    kb = ReplyKeyboardMarkup(
+        [
+            ["💰 Withdraw Profit"],
+            ["🏦 Withdraw Capital"],
+            ["Back"]
+        ],
+        resize_keyboard=True
+    )
+
     await update.message.reply_text(
-        "💸 আপনার লাভ থেকে Withdraw পরিমাণ লিখুন (সর্বনিম্ন ৫০০, সর্বোচ্চ ৫০,০০০):"
+        "Withdraw ধরন নির্বাচন করুন:",
+        reply_markup=kb
     )
+
+    context.user_data["state"] = "withdraw_type"
+
+
+async def withdraw_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    uid = update.effective_user.id
+
+    if text == "💰 Withdraw Profit":
+        context.user_data["withdraw_type"] = "profit"
+        context.user_data["state"] = "withdraw_amount"
+        await update.message.reply_text(
+            "💸 আপনার লাভ থেকে Withdraw পরিমাণ লিখুন (সর্বনিম্ন ৫০০, সর্বোচ্চ ৫০,০০০):"
+        )
+
+    elif text == "🏦 Withdraw Capital":
+        last_date = cur.execute(
+            "SELECT last_deposit_date FROM deposit_dates WHERE uid=?",
+            (uid,)
+        ).fetchone()
+
+        if not last_date:
+            await update.message.reply_text(
+                "❌ ডিপোজিট তথ্য পাওয়া যায়নি।",
+                reply_markup=MAIN_KB
+            )
+            context.user_data["state"] = None
+            return
+
+        months_passed = cur.execute(
+            "SELECT (julianday('now') - julianday(?)) / 30",
+            (last_date[0],)
+        ).fetchone()[0]
+
+        if months_passed < 3:
+            await update.message.reply_text(
+                "❌ আপনার মূলধন ৩ মাস পূর্ণ না হওয়ায় Withdraw করা যাবে না।",
+                reply_markup=MAIN_KB
+            )
+            context.user_data["state"] = None
+            return
+
+        context.user_data["withdraw_type"] = "capital"
+        context.user_data["state"] = "withdraw_amount"
+        await update.message.reply_text(
+            "🏦 আপনার মূলধন থেকে Withdraw পরিমাণ লিখুন (সর্বনিম্ন ৫০০, সর্বোচ্চ ৫০,০০০):"
+        )
+
+    else:
+        await update.message.reply_text("অনুগ্রহ করে বাটন ব্যবহার করুন!")
 
 
 async def withdraw_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -441,21 +493,29 @@ async def withdraw_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     amount = float(update.message.text)
     uid = update.effective_user.id
+    withdraw_type = context.user_data.get("withdraw_type")
 
-    user = cur.execute(
-        "SELECT profit_total FROM users WHERE uid=?",
-        (uid,)
-    ).fetchone()
+    if withdraw_type == "profit":
+        user = cur.execute(
+            "SELECT profit_total FROM users WHERE uid=?",
+            (uid,)
+        ).fetchone()
+        available = user[0]
 
-    if not user:
-        await update.message.reply_text("প্রোফাইল পাওয়া যায়নি!")
+    elif withdraw_type == "capital":
+        user = cur.execute(
+            "SELECT deposit_total FROM users WHERE uid=?",
+            (uid,)
+        ).fetchone()
+        available = user[0]
+
+    else:
+        await update.message.reply_text("❌ Withdraw টাইপ সনাক্ত করা যায়নি।")
         return
 
-    available_profit = user[0]
-
-    if amount > available_profit:
+    if amount > available:
         await update.message.reply_text(
-            f"❌ আপনি আপনার প্রাপ্য লাভের বেশি Withdraw করতে পারবেন না। সর্বোচ্চ: ৳{available_profit}"
+            f"❌ আপনার প্রাপ্য ব্যালেন্সের বেশি Withdraw করা যাবে না। সর্বোচ্চ: ৳{available}"
         )
         return
 
@@ -491,35 +551,27 @@ async def withdraw_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     withdraw_amount_val = context.user_data.get("withdraw_amount")
     method_val = context.user_data.get("withdraw_method")
+    withdraw_type = context.user_data.get("withdraw_type")
     uid = update.effective_user.id
 
-    if not withdraw_amount_val or not method_val:
-        context.user_data["state"] = None
-        await update.message.reply_text(
-            "✅ আপনার Withdraw অনুরোধ জমা হয়েছে। এজেন্টের অনুমোদনের অপেক্ষায় থাকুন।",
-            reply_markup=MAIN_KB)
-        return
-
-    # ---------------- SAVE WITHDRAW REQUEST ---------------- #
     cur.execute(
-        "INSERT INTO withdraws(uid, amount, method, number) VALUES(?,?,?,?)",
-        (uid, withdraw_amount_val, method_val, number)
+        "INSERT INTO withdraws(uid, amount, method, number, withdraw_type) VALUES(?,?,?,?,?)",
+        (uid, withdraw_amount_val, method_val, number, withdraw_type)
     )
     conn.commit()
 
-    # ---------------- TRANSACTION LOG ---------------- #
     cur.execute(
         "INSERT INTO transactions(uid, type, amount, note) VALUES(?,?,?,?)",
-        (uid, "withdraw_request", withdraw_amount_val, "Withdraw submitted")
+        (uid, "withdraw_request", withdraw_amount_val, f"{withdraw_type} withdraw submitted")
     )
     conn.commit()
 
-    # ---------------- NOTIFY ADMINS ---------------- #
     for admin_id in ADMIN_IDS:
         await context.bot.send_message(
             admin_id,
             f"💸 New Withdraw Request!\n"
             f"UID: {uid}\n"
+            f"Type: {withdraw_type.upper()}\n"
             f"Amount: ৳{withdraw_amount_val}\n"
             f"Method: {method_val}\n"
             f"Number: {number}"
@@ -679,22 +731,6 @@ async def help_center(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, reply_markup=MAIN_KB)
 
 
-# ---------------- ADMIN PANEL ---------------- #
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    context.user_data["state"] = None
-    if not is_admin(uid):
-        await update.message.reply_text("You are not authorized.")
-        return
-    await update.message.reply_text(
-        "Admin Panel:\n\nSelect an option:",
-        reply_markup=ReplyKeyboardMarkup([
-            ["📥 Pending Deposits", "📤 Pending Withdraws"],
-            ["📝 Pending Verification", "👥 Users"],
-            ["Back"]
-        ], resize_keyboard=True)
-    )
-
 
 
 # ---------------- ADMIN PANEL ---------------- #
@@ -748,18 +784,22 @@ async def admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---------------- PENDING WITHDRAWS ---------------- #
     elif text == "📤 Pending Withdraws":
         pending = cur.execute(
-            "SELECT id, uid, amount, method, number FROM withdraws WHERE status='pending'"
+            "SELECT id, uid, amount, method, number, withdraw_type "
+            "FROM withdraws WHERE status='pending'"
         ).fetchall()
 
         if not pending:
             await update.message.reply_text("No pending withdraws.")
             return
 
-        for wd_id, uid, amount, method, number in pending:
-            user_balance = cur.execute(
-                "SELECT deposit_total FROM users WHERE uid=?",
+        for wd_id, uid, amount, method, number, withdraw_type in pending:
+            user = cur.execute(
+                "SELECT deposit_total, profit_total FROM users WHERE uid=?",
                 (uid,)
-            ).fetchone()[0]
+            ).fetchone()
+
+            deposit_total = user[0]
+            profit_total = user[1]
 
             kb = InlineKeyboardMarkup([
                 [
@@ -769,9 +809,14 @@ async def admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
 
             await update.message.reply_text(
-                f"Withdraw ID: {wd_id}\nUID: {uid}\nAmount: Tk{amount}\n"
-                f"Method: {method}\nNumber: {number}\n"
-                f"User Current Deposit: Tk{user_balance}",
+                f"Withdraw ID: {wd_id}\n"
+                f"UID: {uid}\n"
+                f"Type: {withdraw_type.upper()}\n"
+                f"Amount: Tk{amount}\n"
+                f"Method: {method}\n"
+                f"Number: {number}\n\n"
+                f"User Deposit: Tk{deposit_total}\n"
+                f"User Profit: Tk{profit_total}",
                 reply_markup=kb
             )
 
@@ -833,7 +878,7 @@ async def admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Referral Count: {ref_count}\nReferral Income: Tk{ref_income}"
             )
 
-    # ---------------- EDIT BALANCE (ADDED) ---------------- #
+    # ---------------- EDIT BALANCE ---------------- #
     elif text == "✏️ Edit Balance":
         await update.message.reply_text("Enter UID:")
         context.user_data["state"] = "admin_edit_uid"
@@ -929,7 +974,7 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wd_id = int(data.split("_")[-1])
 
         wd = cur.execute(
-            "SELECT uid, amount FROM withdraws WHERE id=?",
+            "SELECT uid, amount, withdraw_type FROM withdraws WHERE id=?",
             (wd_id,)
         ).fetchone()
 
@@ -937,29 +982,40 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Withdraw not found.")
             return
 
-        uid, amount = wd
+        uid, amount, withdraw_type = wd
 
         deposit_total, profit_total = cur.execute(
             "SELECT deposit_total, profit_total FROM users WHERE uid=?",
             (uid,)
         ).fetchone()
 
-        profit_part = min(amount, profit_total)
-        capital_part = amount - profit_part
+        # ---------- PROFIT WITHDRAW ---------- #
+        if withdraw_type == "profit":
+            if amount > profit_total:
+                await query.edit_message_text("❌ Insufficient profit balance.")
+                await context.bot.send_message(
+                    uid,
+                    "❌ আপনার লাভের ব্যালেন্স পর্যাপ্ত নয়।"
+                )
+                return
 
-        if capital_part > 0:
+            cur.execute(
+                "UPDATE users SET profit_total = profit_total - ? WHERE uid=?",
+                (amount, uid)
+            )
+
+        # ---------- CAPITAL WITHDRAW ---------- #
+        elif withdraw_type == "capital":
             last_date = cur.execute(
                 "SELECT last_deposit_date FROM deposit_dates WHERE uid=?",
                 (uid,)
             ).fetchone()
 
             if not last_date:
-                await query.edit_message_text(
-                    "❌ Capital withdraw locked (3 months not completed)."
-                )
+                await query.edit_message_text("❌ Capital withdraw locked (3 months not completed).")
                 await context.bot.send_message(
                     uid,
-                    "❌ আপনার Withdraw অনুরোধে মূলধন অন্তর্ভুক্ত আছে যা ৩ মাস লক থাকে।"
+                    "❌ আপনার মূলধন এখনও ৩ মাস লক অবস্থায় আছে।"
                 )
                 return
 
@@ -969,35 +1025,36 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ).fetchone()[0]
 
             if months_passed < 3:
-                await query.edit_message_text(
-                    "❌ Capital withdraw locked (3 months not completed)."
-                )
+                await query.edit_message_text("❌ Capital withdraw locked (3 months not completed).")
                 await context.bot.send_message(
                     uid,
-                    "❌ আপনার মূলধন এখনও ৩ মাস পূর্ণ করেনি, তাই Withdraw সম্ভব নয়।"
+                    "❌ আপনার মূলধন এখনও ৩ মাস পূর্ণ করেনি।"
                 )
                 return
+
+            if amount > deposit_total:
+                await query.edit_message_text("❌ Insufficient capital balance.")
+                await context.bot.send_message(
+                    uid,
+                    "❌ আপনার মূলধনের ব্যালেন্স পর্যাপ্ত নয়।"
+                )
+                return
+
+            cur.execute(
+                "UPDATE users SET deposit_total = deposit_total - ? WHERE uid=?",
+                (amount, uid)
+            )
 
         cur.execute(
             "UPDATE withdraws SET status='approved' WHERE id=?",
             (wd_id,)
         )
 
-        cur.execute(
-            """
-            UPDATE users
-            SET profit_total = profit_total - ?,
-                deposit_total = deposit_total - ?
-            WHERE uid=?
-            """,
-            (profit_part, capital_part, uid)
-        )
-
         conn.commit()
 
         cur.execute(
             "INSERT INTO transactions(uid, type, amount, note) VALUES(?,?,?,?)",
-            (uid, "withdraw", amount, "Withdraw approved")
+            (uid, "withdraw", amount, f"{withdraw_type} withdraw approved")
         )
         conn.commit()
 
@@ -1064,7 +1121,6 @@ async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uid_copy = data.split("_")[-1]
         await query.answer(text=f"UID: {uid_copy}", show_alert=True)
 
-
     elif data.startswith("copy_phone_"):
         phone = data.split("_")[-1]
         await query.answer(text=f"Number: {phone}", show_alert=True)
@@ -1107,19 +1163,47 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await admin_buttons(update, context)
         return
 
-    # ================= ADMIN EDIT BALANCE (UPDATED) ================= #
+    # ================= ADMIN EDIT BALANCE ================= #
 
     if state == "admin_edit_uid":
         if not update.message.text.isdigit():
             await update.message.reply_text("শুধু সংখ্যা লিখুন!")
             return
 
-        context.user_data["edit_uid"] = int(update.message.text)
+        edit_uid = int(update.message.text)
+
+        user = cur.execute(
+            "SELECT deposit_total, profit_total, join_date FROM users WHERE uid=?",
+            (edit_uid,)
+        ).fetchone()
+
+        if not user:
+            await update.message.reply_text("❌ User not found!")
+            return
+
+        deposit, profit, join_date = user
+        context.user_data["edit_uid"] = edit_uid
+
+        await update.message.reply_text(
+            f"""👤 User Information
+
+UID: {edit_uid}
+🏦 Capital: ৳ {deposit}
+💰 Profit: ৳ {profit}
+📅 Join Date: {join_date}
+"""
+        )
 
         kb = ReplyKeyboardMarkup(
-            [["🏦 Edit Capital", "💰 Edit Profit"], ["Back"]],
+            [
+                ["🏦 Edit Capital", "💰 Edit Profit"],
+                ["📅 Edit Join Date"],
+                ["📆 Edit Deposit Date"],
+                ["Back"]
+            ],
             resize_keyboard=True
         )
+
         await update.message.reply_text("কি এডিট করতে চান?", reply_markup=kb)
         context.user_data["state"] = "admin_edit_type"
         return
@@ -1127,15 +1211,29 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif state == "admin_edit_type":
         if update.message.text == "🏦 Edit Capital":
             context.user_data["edit_field"] = "deposit_total"
+            await update.message.reply_text("নতুন Capital লিখুন:")
+            context.user_data["state"] = "admin_edit_amount"
+            return
+
         elif update.message.text == "💰 Edit Profit":
             context.user_data["edit_field"] = "profit_total"
+            await update.message.reply_text("নতুন Profit লিখুন:")
+            context.user_data["state"] = "admin_edit_amount"
+            return
+
+        elif update.message.text == "📅 Edit Join Date":
+            await update.message.reply_text("নতুন Join Date লিখুন (YYYY-MM-DD):")
+            context.user_data["state"] = "admin_edit_join_date"
+            return
+
+        elif update.message.text == "📆 Edit Deposit Date":
+            await update.message.reply_text("নতুন Deposit Date লিখুন (YYYY-MM-DD):")
+            context.user_data["state"] = "admin_edit_deposit_date"
+            return
+
         else:
             await update.message.reply_text("বাটন থেকে নির্বাচন করুন!")
             return
-
-        await update.message.reply_text("নতুন পরিমাণ লিখুন:")
-        context.user_data["state"] = "admin_edit_amount"
-        return
 
     elif state == "admin_edit_amount":
         try:
@@ -1161,6 +1259,57 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text("✅ ব্যালেন্স আপডেট হয়েছে।", reply_markup=ADMIN_KB)
         context.user_data["state"] = None
+        return
+
+    elif state == "admin_edit_join_date":
+        new_date = update.message.text.strip()
+        edit_uid = context.user_data["edit_uid"]
+
+        try:
+            cur.execute(
+                "UPDATE users SET join_date=? WHERE uid=?",
+                (new_date, edit_uid)
+            )
+            conn.commit()
+
+            cur.execute(
+                "INSERT INTO transactions(uid, type, amount, note) VALUES(?,?,?,?)",
+                (edit_uid, "admin_edit", 0, f"Admin updated join_date to {new_date}")
+            )
+            conn.commit()
+
+            await update.message.reply_text("✅ Join Date আপডেট হয়েছে।", reply_markup=ADMIN_KB)
+            context.user_data["state"] = None
+
+        except:
+            await update.message.reply_text("❌ ভুল তারিখ ফরম্যাট! (YYYY-MM-DD)")
+        return
+
+    elif state == "admin_edit_deposit_date":
+        new_date = update.message.text.strip()
+        edit_uid = context.user_data["edit_uid"]
+
+        try:
+            cur.execute(
+                "INSERT OR REPLACE INTO deposit_dates(uid, last_deposit_date) VALUES(?, ?)",
+                (edit_uid, new_date)
+            )
+            conn.commit()
+
+            cur.execute(
+                "INSERT INTO transactions(uid, type, amount, note) VALUES(?,?,?,?)",
+                (edit_uid, "admin_edit", 0, f"Admin updated deposit_date to {new_date}")
+            )
+            conn.commit()
+
+            await update.message.reply_text(
+                "✅ Deposit Date আপডেট হয়েছে। এখন Capital Withdraw আনলক।",
+                reply_markup=ADMIN_KB
+            )
+            context.user_data["state"] = None
+
+        except:
+            await update.message.reply_text("❌ ভুল তারিখ ফরম্যাট! (YYYY-MM-DD)")
         return
 
     # ================= END ADMIN EDIT ================= #
@@ -1385,7 +1534,6 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ---------------- UNKNOWN ---------------- #
     else:
         await update.message.reply_text("ফিচারটি শীঘ্রই আসছে।", reply_markup=MAIN_KB)
-
 
 # ---------------- RUN BOT ---------------- #
 def main():
