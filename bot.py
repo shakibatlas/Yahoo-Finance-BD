@@ -242,6 +242,10 @@ async def transactions_history(update: Update, context: ContextTypes.DEFAULT_TYP
         SELECT type, amount, note, date
         FROM transactions
         WHERE uid=?
+          AND (
+                (type='deposit' AND note='Deposit approved')
+             OR (type='withdraw' AND note='Withdraw approved')
+          )
         ORDER BY id DESC
         LIMIT 15
         """,
@@ -250,19 +254,19 @@ async def transactions_history(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if not txs:
         await update.message.reply_text(
-            "🧾 Transaction History:\n\nNo transactions found.",
+            "🧾 Transaction History:\n\nকোনো Approved লেনদেন পাওয়া যায়নি।",
             reply_markup=MAIN_KB
         )
         return
 
-    msg = "🧾 Transaction History:\n\n"
+    msg = "🧾 Transaction History (Approved Only):\n\n"
 
     for t_type, amount, note, date in txs:
+        emoji = "💰" if t_type == "deposit" else "💸"
         msg += (
-            f"• Type: {t_type}\n"
-            f"  Amount: Tk{amount}\n"
-            f"  Note: {note}\n"
-            f"  Date: {date}\n\n"
+            f"{emoji} {t_type.capitalize()}\n"
+            f"Amount: Tk{amount}\n"
+            f"Date: {date}\n\n"
         )
 
     await update.message.reply_text(msg, reply_markup=MAIN_KB)
