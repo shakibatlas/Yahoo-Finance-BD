@@ -259,7 +259,7 @@ async def transactions_history(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
-    msg = "🧾 Transaction History (Approved Only):\n\n"
+    msg = "🧾 Transaction History:\n\n"
 
     for t_type, amount, note, date in txs:
         emoji = "💰" if t_type == "deposit" else "💸"
@@ -1564,6 +1564,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
