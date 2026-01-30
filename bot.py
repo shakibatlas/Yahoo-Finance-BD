@@ -232,20 +232,16 @@ Referral আয়: ৳ {user[6]}"""
     )
 
 
-
 # ---------------- USER TRANSACTION HISTORY ---------------- #
 async def transactions_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
     txs = cur.execute(
         """
-        SELECT type, amount, note, date
+        SELECT type, amount, date
         FROM transactions
         WHERE uid=?
-          AND (
-                (type='deposit' AND note='Deposit approved')
-             OR (type='withdraw' AND note='Withdraw approved')
-          )
+          AND type IN ('deposit', 'withdraw')
         ORDER BY id DESC
         LIMIT 15
         """,
@@ -261,12 +257,14 @@ async def transactions_history(update: Update, context: ContextTypes.DEFAULT_TYP
 
     msg = "🧾 Transaction History:\n\n"
 
-    for t_type, amount, note, date in txs:
+    for t_type, amount, date in txs:
         emoji = "💰" if t_type == "deposit" else "💸"
+        label = "Deposit" if t_type == "deposit" else "Withdraw"
+
         msg += (
-            f"{emoji} {t_type.capitalize()}\n"
+            f"{emoji} {label}\n"
             f"Amount: Tk{amount}\n"
-            f"Date: {date}\n\n"
+            
         )
 
     await update.message.reply_text(msg, reply_markup=MAIN_KB)
@@ -1564,7 +1562,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 
