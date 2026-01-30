@@ -1328,6 +1328,10 @@ UID: {edit_uid}
         return
 
     # ---------------- WITHDRAW FLOW ---------------- #
+    elif state == "withdraw_type":
+        await withdraw_type(update, context)
+        return
+
     elif state == "withdraw_amount":
         await withdraw_amount(update, context)
         return
@@ -1534,6 +1538,7 @@ UID: {edit_uid}
     # ---------------- UNKNOWN ---------------- #
     else:
         await update.message.reply_text("ফিচারটি শীঘ্রই আসছে।", reply_markup=MAIN_KB)
+
 
 # ---------------- RUN BOT ---------------- #
 def main():
