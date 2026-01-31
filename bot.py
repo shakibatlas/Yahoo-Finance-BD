@@ -1182,9 +1182,9 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     # ---------------- SAFE STATE RESET ---------------- #
-    if text in main_buttons + admin_buttons_list:
-     if state is None:
+    if text in main_buttons + admin_buttons_list and state is None:
         context.user_data["state"] = None
+
 
 
     # ---------------- ADMIN BUTTONS ---------------- #
@@ -1545,10 +1545,8 @@ UID: {edit_uid}
     elif text == "❓ সহায়তা":
         await help_center(update, context)
         return
-
-    # ---------------- UNKNOWN ---------------- #
     else:
-    # ignore non-text updates during active flows (photo, document, etc.)
+  # ignore non-text updates during active flows (photo, document, etc.)
      if state is not None:
         return
 
@@ -1556,6 +1554,9 @@ UID: {edit_uid}
         "ফিচারটি শীঘ্রই আসছে।",
         reply_markup=MAIN_KB
     )
+
+
+    
 
 
 
