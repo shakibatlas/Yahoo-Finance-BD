@@ -52,6 +52,13 @@ try:
 except:
     pass
 
+# add withdraw_password column if not exists
+try:
+    cur.execute("ALTER TABLE verification ADD COLUMN withdraw_password TEXT")
+except:
+    pass
+
+
 
 # ---------------- EXTRA TABLES (ADDED) ---------------- #
 
@@ -401,27 +408,16 @@ async def withdraw_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-
-    "💸 Withdraw প্রক্রিয়া (ধাপে ধাপে)\n\n"
-
-    "1️⃣ Withdraw নির্বাচন করুন\n"
-    "মেইন মেনু থেকে 💸 Withdraw বাটনে ক্লিক করে আপনার Withdraw অনুরোধ শুরু করুন।\n\n"
-
-    "2️⃣ Withdraw ধরন নির্বাচন করুন\n"
-    "আপনি Profit অথবা Capital Withdraw করতে পারবেন।\n\n"
-
+    "💸 Withdraw করার ধাপসমূহ\n\n"
+    "1️⃣ Withdraw বাটনে ক্লিক করুন\n"
+    "2️⃣ Profit অথবা Capital নির্বাচন করুন\n"
     "3️⃣ Withdraw পরিমাণ লিখুন\n"
-    "⚠️ সর্বনিম্ন Withdraw পরিমাণ: ৳৫০০\n\n"
-
     "4️⃣ পেমেন্ট মাধ্যম নির্বাচন করুন\n"
-    "• বিকাশ\n"
-    "• নগদ\n\n"
+    "5️⃣ বিকাশ / নগদ নাম্বার লিখুন\n"
+    "6️⃣ নিরাপত্তার জন্য Withdraw Password প্রদান করুন\n"
+    "7️⃣ যাচাই শেষে আপনার পেমেন্ট সম্পন্ন হবে\n"
+)
 
-    "5️⃣ পেমেন্ট নাম্বার লিখুন\n\n"
-
-    "6️⃣ এজেন্ট যাচাই\n"
-    "এজেন্ট যাচাইয়ের পর পেমেন্ট পাঠানো হবে।"
-    )
 
     kb = ReplyKeyboardMarkup(
         [
@@ -498,18 +494,16 @@ async def withdraw_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     withdraw_type = context.user_data.get("withdraw_type")
 
     if withdraw_type == "profit":
-        user = cur.execute(
+        available = cur.execute(
             "SELECT profit_total FROM users WHERE uid=?",
             (uid,)
-        ).fetchone()
-        available = user[0]
+        ).fetchone()[0]
 
     elif withdraw_type == "capital":
-        user = cur.execute(
+        available = cur.execute(
             "SELECT deposit_total FROM users WHERE uid=?",
             (uid,)
-        ).fetchone()
-        available = user[0]
+        ).fetchone()[0]
 
     else:
         await update.message.reply_text("❌ Withdraw টাইপ সনাক্ত করা যায়নি।")
@@ -551,14 +545,36 @@ async def withdraw_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("শুধুমাত্র সংখ্যা লিখুন!")
         return
 
-    withdraw_amount_val = context.user_data.get("withdraw_amount")
-    method_val = context.user_data.get("withdraw_method")
-    withdraw_type = context.user_data.get("withdraw_type")
+    context.user_data["withdraw_number"] = number
+    await update.message.reply_text("🔐 Withdraw Password লিখুন:")
+    context.user_data["state"] = "withdraw_password"
+
+
+async def withdraw_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.text.isdigit():
+        await update.message.reply_text("❌ Withdraw Password ভুল!")
+        return
+
     uid = update.effective_user.id
+
+    saved = cur.execute(
+        "SELECT withdraw_password FROM verification WHERE uid=? AND status='approved'",
+        (uid,)
+    ).fetchone()
+
+    if not saved or update.message.text != saved[0]:
+        await update.message.reply_text("❌ Withdraw Password ভুল!")
+        return
+
+    # -------- PASSWORD OK → CONTINUE NORMAL FLOW -------- #
+    withdraw_amount_val = context.user_data["withdraw_amount"]
+    method_val = context.user_data["withdraw_method"]
+    number_val = context.user_data["withdraw_number"]
+    withdraw_type = context.user_data["withdraw_type"]
 
     cur.execute(
         "INSERT INTO withdraws(uid, amount, method, number, withdraw_type) VALUES(?,?,?,?,?)",
-        (uid, withdraw_amount_val, method_val, number, withdraw_type)
+        (uid, withdraw_amount_val, method_val, number_val, withdraw_type)
     )
     conn.commit()
 
@@ -576,7 +592,7 @@ async def withdraw_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Type: {withdraw_type.upper()}\n"
             f"Amount: ৳{withdraw_amount_val}\n"
             f"Method: {method_val}\n"
-            f"Number: {number}"
+            f"Number: {number_val}"
         )
 
     context.user_data["state"] = None
@@ -585,6 +601,7 @@ async def withdraw_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ আপনার Withdraw অনুরোধ সফলভাবে জমা হয়েছে। এজেন্টের অনুমোদনের অপেক্ষায় থাকুন।",
         reply_markup=MAIN_KB
     )
+
 
 
 
@@ -1136,6 +1153,14 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text if update.message else None
     state = context.user_data.get("state")
 
+    if text == "Back":
+        context.user_data.clear()
+        await update.message.reply_text(
+            "মেইন মেনুতে ফিরে আসা হয়েছে।",
+            reply_markup=MAIN_KB
+        )
+        return
+
     # ---------------- RESET STATE ON MAIN BUTTONS ---------------- #
     main_buttons = [
         "👤 প্রোফাইল",
@@ -1166,7 +1191,6 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ================= ADMIN EDIT BALANCE ================= #
-
     if state == "admin_edit_uid":
         if not update.message.text.isdigit():
             await update.message.reply_text("শুধু সংখ্যা লিখুন!")
@@ -1232,7 +1256,6 @@ UID: {edit_uid}
             await update.message.reply_text("নতুন Deposit Date লিখুন (YYYY-MM-DD):")
             context.user_data["state"] = "admin_edit_deposit_date"
             return
-
         else:
             await update.message.reply_text("বাটন থেকে নির্বাচন করুন!")
             return
@@ -1247,71 +1270,11 @@ UID: {edit_uid}
         edit_uid = context.user_data["edit_uid"]
         field = context.user_data["edit_field"]
 
-        cur.execute(
-            f"UPDATE users SET {field}=? WHERE uid=?",
-            (amount, edit_uid)
-        )
-        conn.commit()
-
-        cur.execute(
-            "INSERT INTO transactions(uid, type, amount, note) VALUES(?,?,?,?)",
-            (edit_uid, "admin_edit", amount, f"Admin updated {field}")
-        )
+        cur.execute(f"UPDATE users SET {field}=? WHERE uid=?", (amount, edit_uid))
         conn.commit()
 
         await update.message.reply_text("✅ ব্যালেন্স আপডেট হয়েছে।", reply_markup=ADMIN_KB)
         context.user_data["state"] = None
-        return
-
-    elif state == "admin_edit_join_date":
-        new_date = update.message.text.strip()
-        edit_uid = context.user_data["edit_uid"]
-
-        try:
-            cur.execute(
-                "UPDATE users SET join_date=? WHERE uid=?",
-                (new_date, edit_uid)
-            )
-            conn.commit()
-
-            cur.execute(
-                "INSERT INTO transactions(uid, type, amount, note) VALUES(?,?,?,?)",
-                (edit_uid, "admin_edit", 0, f"Admin updated join_date to {new_date}")
-            )
-            conn.commit()
-
-            await update.message.reply_text("✅ Join Date আপডেট হয়েছে।", reply_markup=ADMIN_KB)
-            context.user_data["state"] = None
-
-        except:
-            await update.message.reply_text("❌ ভুল তারিখ ফরম্যাট! (YYYY-MM-DD)")
-        return
-
-    elif state == "admin_edit_deposit_date":
-        new_date = update.message.text.strip()
-        edit_uid = context.user_data["edit_uid"]
-
-        try:
-            cur.execute(
-                "INSERT OR REPLACE INTO deposit_dates(uid, last_deposit_date) VALUES(?, ?)",
-                (edit_uid, new_date)
-            )
-            conn.commit()
-
-            cur.execute(
-                "INSERT INTO transactions(uid, type, amount, note) VALUES(?,?,?,?)",
-                (edit_uid, "admin_edit", 0, f"Admin updated deposit_date to {new_date}")
-            )
-            conn.commit()
-
-            await update.message.reply_text(
-                "✅ Deposit Date আপডেট হয়েছে। এখন Capital Withdraw আনলক।",
-                reply_markup=ADMIN_KB
-            )
-            context.user_data["state"] = None
-
-        except:
-            await update.message.reply_text("❌ ভুল তারিখ ফরম্যাট! (YYYY-MM-DD)")
         return
 
     # ================= END ADMIN EDIT ================= #
@@ -1320,11 +1283,9 @@ UID: {edit_uid}
     if state == "deposit_amount":
         await deposit_amount(update, context)
         return
-
     elif state == "deposit_proof":
         await deposit_proof(update, context)
         return
-
     elif state == "deposit_uid":
         await deposit_uid(update, context)
         return
@@ -1333,17 +1294,65 @@ UID: {edit_uid}
     elif state == "withdraw_type":
         await withdraw_type(update, context)
         return
-
     elif state == "withdraw_amount":
         await withdraw_amount(update, context)
         return
-
     elif state == "withdraw_method":
         await withdraw_method(update, context)
         return
-
     elif state == "withdraw_number":
-        await withdraw_number(update, context)
+        # number collect only, password comes next
+        number = update.message.text.strip()
+        if not number.isdigit():
+            await update.message.reply_text("শুধুমাত্র সংখ্যা লিখুন!")
+            return
+        context.user_data["withdraw_number"] = number
+        await update.message.reply_text("Withdraw Password লিখুন:")
+        context.user_data["state"] = "withdraw_password"
+        return
+
+    elif state == "withdraw_password":
+        if not update.message.text.isdigit():
+            await update.message.reply_text("Withdraw Password ভুল!")
+            return
+
+        saved = cur.execute(
+            "SELECT withdraw_password FROM verification WHERE uid=? AND status='approved'",
+            (uid,)
+        ).fetchone()
+
+        if not saved or update.message.text != saved[0]:
+            await update.message.reply_text("❌ Withdraw Password ভুল!")
+            return
+
+        cur.execute(
+            "INSERT INTO withdraws(uid, amount, method, number, withdraw_type) VALUES(?,?,?,?,?)",
+            (
+                uid,
+                context.user_data["withdraw_amount"],
+                context.user_data["withdraw_method"],
+                context.user_data["withdraw_number"],
+                context.user_data["withdraw_type"]
+            )
+        )
+        conn.commit()
+
+        for admin_id in ADMIN_IDS:
+            await context.bot.send_message(
+                admin_id,
+                f"💸 New Withdraw Request!\n"
+                f"UID: {uid}\n"
+                f"Type: {context.user_data['withdraw_type'].upper()}\n"
+                f"Amount: ৳{context.user_data['withdraw_amount']}\n"
+                f"Method: {context.user_data['withdraw_method']}\n"
+                f"Number: {context.user_data['withdraw_number']}"
+            )
+
+        context.user_data.clear()
+        await update.message.reply_text(
+            "✅ আপনার Withdraw অনুরোধ সফলভাবে জমা হয়েছে।",
+            reply_markup=MAIN_KB
+        )
         return
 
     # ---------------- VERIFICATION FLOW ---------------- #
@@ -1359,7 +1368,19 @@ UID: {edit_uid}
         return
 
     elif state == "verify_phone":
+        if not update.message.text.isdigit():
+            await update.message.reply_text("শুধুমাত্র সংখ্যা লিখুন!")
+            return
         context.user_data["verify_phone"] = update.message.text
+        await update.message.reply_text("Withdraw Password সেট করুন (শুধু সংখ্যা):")
+        context.user_data["state"] = "verify_withdraw_password"
+        return
+
+    elif state == "verify_withdraw_password":
+        if not update.message.text.isdigit():
+            await update.message.reply_text("Withdraw Password শুধুমাত্র সংখ্যা হতে হবে!")
+            return
+        context.user_data["verify_withdraw_password"] = update.message.text
         await update.message.reply_text("আপনার জন্ম তারিখ লিখুন (DD/MM/YYYY):")
         context.user_data["state"] = "verify_dob"
         return
@@ -1372,43 +1393,35 @@ UID: {edit_uid}
 
     elif state == "verify_nid_front":
         if update.message.photo or update.message.document:
-            context.user_data["verify_nid_front"] = (
-                update.message.photo[-1].file_id
-                if update.message.photo else update.message.document.file_id
-            )
+            context.user_data["verify_nid_front"] = update.message.photo[-1].file_id if update.message.photo else update.message.document.file_id
             await update.message.reply_text("NID পেছনের দিকের ছবি পাঠান:")
             context.user_data["state"] = "verify_nid_back"
         else:
-            await update.message.reply_text("অনুগ্রহ করে NID সামনের দিকের ছবি বা ডকুমেন্ট পাঠান!")
+            await update.message.reply_text("অনুগ্রহ করে NID সামনের দিকের ছবি পাঠান!")
         return
 
     elif state == "verify_nid_back":
         if update.message.photo or update.message.document:
-            context.user_data["verify_nid_back"] = (
-                update.message.photo[-1].file_id
-                if update.message.photo else update.message.document.file_id
-            )
+            context.user_data["verify_nid_back"] = update.message.photo[-1].file_id if update.message.photo else update.message.document.file_id
             await update.message.reply_text("আপনার সেলফি / নিজের ছবি পাঠান:")
             context.user_data["state"] = "verify_selfie"
         else:
-            await update.message.reply_text("অনুগ্রহ করে NID পেছনের দিকের ছবি বা ডকুমেন্ট পাঠান!")
+            await update.message.reply_text("অনুগ্রহ করে NID পেছনের দিকের ছবি পাঠান!")
         return
 
     elif state == "verify_selfie":
         if update.message.photo or update.message.document:
-            context.user_data["verify_selfie"] = (
-                update.message.photo[-1].file_id
-                if update.message.photo else update.message.document.file_id
-            )
+            context.user_data["verify_selfie"] = update.message.photo[-1].file_id if update.message.photo else update.message.document.file_id
 
             cur.execute(
                 """INSERT OR REPLACE INTO verification
-                   (uid, name, phone, dob, nid_front, nid_back, selfie, status)
-                   VALUES(?,?,?,?,?,?,?, 'pending')""",
+                (uid, name, phone, withdraw_password, dob, nid_front, nid_back, selfie, status)
+                VALUES(?,?,?,?,?,?,?, ?, 'pending')""",
                 (
                     uid,
                     context.user_data["verify_name"],
                     context.user_data["verify_phone"],
+                    context.user_data["verify_withdraw_password"],
                     context.user_data["verify_dob"],
                     context.user_data["verify_nid_front"],
                     context.user_data["verify_nid_back"],
@@ -1417,21 +1430,15 @@ UID: {edit_uid}
             )
             conn.commit()
 
-            context.user_data["state"] = None
+            context.user_data.clear()
             await update.message.reply_text(
                 "✅ আপনার ভেরিফিকেশন সফলভাবে জমা হয়েছে! অ্যাডমিন শীঘ্রই আপনার অ্যাকাউন্ট অনুমোদন করবেন।",
                 reply_markup=MAIN_KB
             )
-
-            for admin_id in ADMIN_IDS:
-                await context.bot.send_message(
-                    admin_id,
-                    f"📝 নতুন ভেরিফিকেশন অনুরোধ!\nUID: {uid}\nনাম: {context.user_data['verify_name']}"
-                )
         else:
-            await update.message.reply_text("অনুগ্রহ করে একটি সেলফি / নিজের ছবি পাঠান!")
+            await update.message.reply_text("অনুগ্রহ করে একটি সেলফি পাঠান!")
         return
-
+    
     # ---------------- PROFILE ---------------- #
     elif text == "👤 প্রোফাইল":
         verification = cur.execute(
@@ -1542,6 +1549,11 @@ UID: {edit_uid}
         await update.message.reply_text("ফিচারটি শীঘ্রই আসছে।", reply_markup=MAIN_KB)
 
 
+    
+
+
+    
+
 # ---------------- RUN BOT ---------------- #
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
@@ -1562,6 +1574,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
