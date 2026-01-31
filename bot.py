@@ -1181,9 +1181,10 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✏️ Edit Balance"
     ]
 
-    if text in main_buttons + admin_buttons_list:
-        context.user_data["state"] = None
-        state = None
+    if text and text in main_buttons + admin_buttons_list:
+     context.user_data["state"] = None
+    state = None
+
 
     # ---------------- ADMIN BUTTONS ---------------- #
     if is_admin(uid) and text in admin_buttons_list:
