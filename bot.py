@@ -1548,10 +1548,15 @@ UID: {edit_uid}
 
     # ---------------- UNKNOWN ---------------- #
     else:
-        await update.message.reply_text("ফিচারটি শীঘ্রই আসছে।", reply_markup=MAIN_KB)
+    # ignore non-text updates during active flows (photo, document, etc.)
+     if state is not None:
+        return
 
+    await update.message.reply_text(
+        "ফিচারটি শীঘ্রই আসছে।",
+        reply_markup=MAIN_KB
+    )
 
-    
 
 
     
@@ -1576,9 +1581,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
