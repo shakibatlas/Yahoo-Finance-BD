@@ -1181,9 +1181,10 @@ async def router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✏️ Edit Balance"
     ]
 
-    if text and text in main_buttons + admin_buttons_list:
-     context.user_data["state"] = None
-    state = None
+    # ---------------- SAFE STATE RESET ---------------- #
+    if text in main_buttons + admin_buttons_list:
+     if state is None:
+        context.user_data["state"] = None
 
 
     # ---------------- ADMIN BUTTONS ---------------- #
